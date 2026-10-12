@@ -8,7 +8,7 @@ class TokenBucket:
         if rate <= 0 or capacity < 1:
             raise ValueError("Rate and capacity must be positive")
 
-        self.rate = rate
+        self.rate = float(rate)
         self.capacity = capacity
         self.tokens = float(capacity)
         self.updated_at = time.monotonic()
@@ -23,6 +23,15 @@ class TokenBucket:
             self.tokens + elapsed * self.rate,
         )
         self.updated_at = now
+
+    def set_rate(self, new_rate: float):
+        """Safely change the token fill rate."""
+        if new_rate <= 0:
+            raise ValueError("Rate must be positive")
+
+        with self.lock:
+            self._refill()
+            self.rate = float(new_rate)
 
     def acquire(self, timeout: float = 5.0) -> bool:
         deadline = time.monotonic() + timeout

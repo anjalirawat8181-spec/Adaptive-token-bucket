@@ -5,9 +5,10 @@ import type {
   TrialSummary,
 } from "../types";
 
-const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"
-).replace(/\/+$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(
+  /\/+$/,
+  "",
+);
 const REQUEST_TIMEOUT_MS = 900_000;
 
 export interface HealthStatus {
@@ -123,7 +124,9 @@ async function request(
     }
     if (error instanceof TypeError) {
       throw new Error(
-        `Could not reach the API at ${API_BASE_URL}. Start the FastAPI backend and check its CORS settings.`,
+        `Could not reach the API at ${
+          API_BASE_URL || `${window.location.origin} (/api proxy)`
+        }. Start the FastAPI backend and check its CORS settings.`,
       );
     }
     throw error;
@@ -220,5 +223,5 @@ export async function downloadCsv(url: string): Promise<void> {
 }
 
 export function getApiBaseUrl(): string {
-  return API_BASE_URL;
+  return API_BASE_URL || `${window.location.origin} (/api proxy)`;
 }
