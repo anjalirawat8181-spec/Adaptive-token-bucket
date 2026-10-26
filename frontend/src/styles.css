@@ -1101,7 +1101,7 @@ tbody tr:hover {
   background: white;
 }
 
-.algorithm-summary-card.algorithm-adaptive {
+.algorithm-summary-card.algorithm-classical {
   border-top-color: var(--primary);
 }
 
@@ -1132,11 +1132,11 @@ tbody tr:hover {
 }
 
 .dot-classical {
-  background: var(--colors-classical, #6c7b70);
+  background: var(--primary);
 }
 
 .dot-adaptive {
-  background: var(--primary);
+  background: var(--colors-adaptive, #718897);
 }
 
 .summary-stat-grid {
@@ -1272,13 +1272,13 @@ tbody tr:hover {
   background: #758278;
 }
 
-.badge-adaptive {
+.badge-classical {
   border-color: #d5e7f1;
   background: #eff7fb;
   color: #34759b;
 }
 
-.badge-adaptive > span {
+.badge-classical > span {
   background: var(--primary);
 }
 

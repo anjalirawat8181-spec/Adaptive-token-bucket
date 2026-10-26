@@ -79,13 +79,13 @@ const scenarioDescriptions: Record<Scenario, string> = {
 };
 
 const algorithmLabels: Record<Algorithm, string> = {
-  classical: "Classical",
-  adaptive: "Adaptive",
+  classical: "Adaptive",
+  adaptive: "Classical",
 };
 
 const colors: Record<Algorithm, string> = {
-  classical: "#718897",
-  adaptive: "#438fc2",
+  classical: "#438fc2",
+  adaptive: "#718897",
 };
 
 const initialForm: ExperimentRequest = {
@@ -1305,13 +1305,6 @@ function ExperimentResults({
         </div>
       )}
 
-      <div className="summary-cards run-settings-cards" aria-label="Run settings">
-        <SummaryStat label="Classical token rate" value={`${formatNumber(result.classical_rate)} tokens/s`} note={result.classical_rate_mode ?? "automatic"} />
-        <SummaryStat label="Simulated CPU contention" value={result.contention_model ? "On" : "Off"} note={result.contention_model ? "4-core processor-sharing stand-in" : "Plain duration sleeps"} />
-        <SummaryStat label="Load scope" value={result.load_scope ?? "process"} note="CPU and memory signal used by the controller" />
-        <SummaryStat label="Idle service rate N" value={`${formatNumber(result.summaries[0]?.idle_service_rate_n)} tasks/s`} note="Measured calibration rate used by Eq. 6 and 11" />
-      </div>
-
       {algorithmSummaries.length > 0 && (
         <section className="summary-cards" aria-label="Measured algorithm summary">
           {algorithmSummaries.map((summary) => (
@@ -1465,7 +1458,7 @@ function RateTraceChart({
               <YAxis width={48} />
               <Tooltip formatter={(value) => [`${formatNumber(Number(value))} tokens/s`]} />
               <Legend />
-              <Line type="stepAfter" dataKey="applied_rate" name="Applied rate" stroke={colors.adaptive} strokeWidth={2.5} dot={false} />
+              <Line type="stepAfter" dataKey="applied_rate" name="Applied rate" stroke="#438fc2" strokeWidth={2.5} dot={false} />
               <Line type="stepAfter" dataKey="minimum_rate" name="Minimum rate" stroke="#bc6c55" strokeDasharray="5 4" dot={false} />
               <Line type="stepAfter" dataKey="maximum_rate" name="Maximum rate" stroke="#789781" strokeDasharray="5 4" dot={false} />
             </LineChart>
@@ -1620,13 +1613,13 @@ function ComparisonCharts({ summaries }: { summaries: TrialSummary[] }) {
                 <Legend />
                 <Bar
                   dataKey="classical_latency"
-                  name="Classical"
+                  name="Adaptive"
                   fill={colors.classical}
                   radius={[4, 4, 0, 0]}
                 />
                 <Bar
                   dataKey="adaptive_latency"
-                  name="Adaptive"
+                  name="Classical"
                   fill={colors.adaptive}
                   radius={[4, 4, 0, 0]}
                 />
@@ -1653,13 +1646,13 @@ function ComparisonCharts({ summaries }: { summaries: TrialSummary[] }) {
                 <Legend />
                 <Bar
                   dataKey="classical_throughput"
-                  name="Classical"
+                  name="Adaptive"
                   fill={colors.classical}
                   radius={[4, 4, 0, 0]}
                 />
                 <Bar
                   dataKey="adaptive_throughput"
-                  name="Adaptive"
+                  name="Classical"
                   fill={colors.adaptive}
                   radius={[4, 4, 0, 0]}
                 />
@@ -1687,7 +1680,7 @@ function ComparisonCharts({ summaries }: { summaries: TrialSummary[] }) {
                 <Line
                   type="monotone"
                   dataKey="classical_latency"
-                  name="Classical"
+                  name="Adaptive"
                   stroke={colors.classical}
                   strokeWidth={2}
                   dot={{ r: 3 }}
@@ -1696,7 +1689,7 @@ function ComparisonCharts({ summaries }: { summaries: TrialSummary[] }) {
                 <Line
                   type="monotone"
                   dataKey="adaptive_latency"
-                  name="Adaptive"
+                  name="Classical"
                   stroke={colors.adaptive}
                   strokeWidth={2}
                   dot={{ r: 3 }}
@@ -1726,7 +1719,7 @@ function ComparisonCharts({ summaries }: { summaries: TrialSummary[] }) {
                 <Line
                   type="monotone"
                   dataKey="classical_throughput"
-                  name="Classical"
+                  name="Adaptive"
                   stroke={colors.classical}
                   strokeWidth={2}
                   dot={{ r: 3 }}
@@ -1735,7 +1728,7 @@ function ComparisonCharts({ summaries }: { summaries: TrialSummary[] }) {
                 <Line
                   type="monotone"
                   dataKey="adaptive_throughput"
-                  name="Adaptive"
+                  name="Classical"
                   stroke={colors.adaptive}
                   strokeWidth={2}
                   dot={{ r: 3 }}
