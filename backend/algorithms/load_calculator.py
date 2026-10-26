@@ -1,4 +1,9 @@
 
+import math
+
+RENORMALIZE_UNAVAILABLE_INDICATORS = True
+
+
 def classify_indicator(value):
     if value <= 0.35:
         return "low"
@@ -7,27 +12,43 @@ def classify_indicator(value):
     return "high"
 
 
-def calculate_load(cpu, memory, resources):
+def calculate_load(
+    cpu,
+    memory,
+    resources,
+    renormalize_unavailable=RENORMALIZE_UNAVAILABLE_INDICATORS,
+):
     indicators = {
         "cpu": cpu,
         "memory": memory,
         "resources": resources,
     }
 
-    for value in indicators.values():
-        if not 0 <= value <= 1:
+    available = {
+        name: value
+        for name, value in indicators.items()
+        if value is not None
+    }
+    for value in available.values():
+        if not math.isfinite(value) or not 0 <= value <= 1:
             raise ValueError("Indicators must be in [0, 1]")
 
+    states = {
+        name: classify_indicator(value) if value is not None else None
+        for name, value in indicators.items()
+    }
+    if not available:
+        return {
+            "load": None,
+            "states": states,
+            "weights": [],
+        }
+
     ranked = sorted(
-        indicators.items(),
+        available.items(),
         key=lambda item: item[1],
         reverse=True,
     )
-
-    states = {
-        name: classify_indicator(value)
-        for name, value in indicators.items()
-    }
 
     high_count = sum(
         state == "high" for state in states.values()
@@ -36,8 +57,15 @@ def calculate_load(cpu, memory, resources):
         state == "medium" for state in states.values()
     )
 
+    # Paper case 1 applies when all three indicators occupy one interval.
+    all_same_interval = (
+        len(available) == 3
+        and len(set(states.values())) == 1
+    )
     # Assign weights to the highest-impact indicators.
-    if high_count >= 2:
+    if all_same_interval:
+        weights = [0.50, 0.30, 0.20]
+    elif high_count >= 2:
         weights = [0.50, 0.47, 0.03]
     elif high_count == 1:
         weights = [0.90, 0.07, 0.03]
@@ -48,9 +76,11 @@ def calculate_load(cpu, memory, resources):
     else:
         weights = [0.50, 0.30, 0.20]
 
-    ordered_values = [
-        value for _, value in ranked
-    ]
+    weights = weights[:len(ranked)]
+    if renormalize_unavailable:
+        weight_total = sum(weights)
+        weights = [weight / weight_total for weight in weights]
+    ordered_values = [value for _, value in ranked]
 
     load = sum(
         weight * value

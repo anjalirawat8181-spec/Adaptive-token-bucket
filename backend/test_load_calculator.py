@@ -1,5 +1,43 @@
 
+import unittest
+
 from algorithms.load_calculator import calculate_load, load_rank
+
+
+class LoadWeightTests(unittest.TestCase):
+    def test_paper_weight_cases(self):
+        cases = (
+            ((0.8, 0.6, 0.2), [0.90, 0.07, 0.03]),
+            ((0.9, 0.8, 0.2), [0.50, 0.47, 0.03]),
+            ((0.7, 0.6, 0.2), [0.50, 0.40, 0.10]),
+            ((0.6, 0.2, 0.1), [0.70, 0.20, 0.10]),
+        )
+        for indicators, expected in cases:
+            with self.subTest(indicators=indicators):
+                for actual, weight in zip(
+                    calculate_load(*indicators)["weights"], expected
+                ):
+                    self.assertAlmostEqual(actual, weight, places=9)
+
+    def test_all_same_interval_uses_case_one_weights(self):
+        for indicators in ((0.1, 0.2, 0.3), (0.55, 0.6, 0.7), (0.8, 0.9, 1.0)):
+            with self.subTest(indicators=indicators):
+                for actual, weight in zip(
+                    calculate_load(*indicators)["weights"],
+                    [0.50, 0.30, 0.20],
+                ):
+                    self.assertAlmostEqual(actual, weight, places=9)
+
+    def test_unavailable_indicators_are_renormalized_by_default(self):
+        normalized = calculate_load(cpu=None, memory=0.5, resources=0.25)
+        unnormalized = calculate_load(
+            cpu=None,
+            memory=0.5,
+            resources=0.25,
+            renormalize_unavailable=False,
+        )
+        self.assertAlmostEqual(sum(normalized["weights"]), 1.0)
+        self.assertAlmostEqual(unnormalized["load"], 0.4)
 
 # Test 1: Calculate overall load
 result = calculate_load(

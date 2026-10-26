@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  Area,
   Bar,
   BarChart,
   CartesianGrid,
@@ -33,9 +34,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { checkHealth, downloadCsv, getApiBaseUrl, runExperiment } from "./services/api";
+import { checkHealth, downloadCsv, getApiBaseUrl, runExperiment, runSweep } from "./services/api";
 import type {
   Algorithm,
+  ConcurrencySweepResult,
   ExperimentRequest,
   SavedExperiment,
   Scenario,
@@ -67,6 +69,15 @@ const scenarioLabels: Record<Scenario, string> = {
   dynamic: "Dynamic traffic",
 };
 
+const scenarioDescriptions: Record<Scenario, string> = {
+  simple: "All tasks use the 5 ms simple service time and arrive together.",
+  general: "All tasks use the 20 ms general service time and arrive together.",
+  complex: "All tasks use the 80 ms complex service time and arrive together.",
+  mixed: "Task types are seeded across 5, 20, and 80 ms; all arrive together.",
+  dynamic:
+    "A 70-step periodic concurrency envelope (20–200 requests) drives paired mixed-workload bursts. The envelope is a documented stand-in for the paper’s cited daily-traffic equation.",
+};
+
 const algorithmLabels: Record<Algorithm, string> = {
   classical: "Classical",
   adaptive: "Adaptive",
@@ -82,6 +93,9 @@ const initialForm: ExperimentRequest = {
   concurrency: 20,
   repetitions: 3,
   comparison: "both",
+  contention_model: true,
+  load_scope: "process",
+  speedup: 1,
 };
 
 function formatNumber(value: number | undefined, digits = 2): string {
@@ -91,6 +105,136 @@ function formatNumber(value: number | undefined, digits = 2): string {
         maximumFractionDigits: digits,
       })
     : "—";
+}
+
+function ConcurrencySweepPanel({
+  scenario,
+  repetitions,
+  comparison,
+  disabled,
+}: {
+  scenario: Scenario;
+  repetitions: number;
+  comparison: ExperimentRequest["comparison"];
+  disabled: boolean;
+}) {
+  const [step, setStep] = useState("5");
+  const [sweepRepetitions, setSweepRepetitions] = useState("20");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<ConcurrencySweepResult | null>(null);
+
+  async function executeSweep() {
+    if (scenario === "dynamic") {
+      setError("The dynamic scenario runs its own 70-step traffic envelope.");
+      return;
+    }
+    setRunning(true);
+    setError("");
+    try {
+      setResult(await runSweep({
+        scenario,
+        concurrency_step: Number(step),
+        repetitions: Number(sweepRepetitions || repetitions),
+        comparison,
+      }));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const chartRows = useMemo(() => {
+    if (!result) return [];
+    const byConcurrency = new Map<number, Record<string, number>>();
+    for (const point of result.points) {
+      const row = byConcurrency.get(point.concurrency) ?? {
+        concurrency: point.concurrency,
+      };
+      for (const metric of [
+        "average_latency_ms",
+        "p90_latency_ms",
+        "throughput_tasks_per_s",
+      ] as const) {
+        const value = point[`mean_${metric}`];
+        const deviation = point[`std_${metric}`] ?? 0;
+        if (typeof value === "number") {
+          row[`${point.algorithm}_${metric}`] = value;
+          row[`${point.algorithm}_${metric}_low`] = Math.max(0, value - deviation);
+          row[`${point.algorithm}_${metric}_band`] = 2 * deviation;
+        }
+      }
+      byConcurrency.set(point.concurrency, row);
+    }
+    return [...byConcurrency.values()].sort((a, b) => a.concurrency - b.concurrency);
+  }, [result]);
+
+  return (
+    <section className="panel sweep-panel" aria-label="Concurrency sweep">
+      <div className="panel-heading">
+        <div className="panel-heading-icon"><Activity size={18} /></div>
+        <div>
+          <h2>Concurrency sweep</h2>
+          <p>Mean and standard deviation across concurrency levels.</p>
+        </div>
+      </div>
+      <div className="sweep-controls">
+        <label>Step <input type="number" min={1} max={200} value={step} onChange={(event) => setStep(event.target.value)} /></label>
+        <label>Repetitions <input type="number" min={1} max={20} value={sweepRepetitions} onChange={(event) => setSweepRepetitions(event.target.value)} /></label>
+        <button className="button button-secondary" type="button" onClick={executeSweep} disabled={disabled || running || scenario === "dynamic"}>
+          {running ? "Sweep running…" : "Run concurrency sweep"}
+        </button>
+      </div>
+      <p className="field-hint">Sweeps exceeding the 15-minute estimate are rejected by the API.</p>
+      {error && <div className="alert alert-error" role="alert"><AlertCircle size={16} /> {error}</div>}
+      {result && (
+        <>
+          <p className="field-hint">Estimated runtime: {formatNumber(result.estimated_runtime_s / 60, 1)} minutes.</p>
+          <div className="chart-grid">
+            <SweepChart title="Mean latency" metric="average_latency_ms" rows={chartRows} unit="ms" />
+            <SweepChart title="90th percentile latency" metric="p90_latency_ms" rows={chartRows} unit="ms" />
+            <SweepChart title="Throughput" metric="throughput_tasks_per_s" rows={chartRows} unit="tasks/s" />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function SweepChart({
+  title,
+  metric,
+  rows,
+  unit,
+}: {
+  title: string;
+  metric: string;
+  rows: Record<string, number>[];
+  unit: string;
+}) {
+  return (
+    <ChartPanel title={title} subtitle={`Mean ± standard deviation · ${unit}`}>
+      {rows.length ? (
+        <ResponsiveContainer width="100%" height={250}>
+          <LineChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+            <CartesianGrid stroke="#e5edf2" vertical={false} />
+            <XAxis dataKey="concurrency" />
+            <YAxis width={48} />
+            <Tooltip formatter={(value) => [`${formatNumber(Number(value))} ${unit}`]} />
+            <Legend />
+            {(["classical", "adaptive"] as const).map((algorithm) => (
+              <Fragment key={algorithm}>
+                <Area dataKey={`${algorithm}_${metric}_low`} stackId={`${algorithm}-band`} fill="transparent" stroke="none" legendType="none" />
+                <Area dataKey={`${algorithm}_${metric}_band`} stackId={`${algorithm}-band`} fill={colors[algorithm]} fillOpacity={0.13} stroke="none" name={`${algorithmLabels[algorithm]} ± SD`} />
+                <Line type="monotone" dataKey={`${algorithm}_${metric}`} name={algorithmLabels[algorithm]} stroke={colors[algorithm]} strokeWidth={2} dot={false} connectNulls />
+              </Fragment>
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      ) : <ChartEmpty />}
+    </ChartPanel>
+  );
 }
 
 function errorMessage(error: unknown): string {
@@ -113,24 +257,69 @@ function summarizeAlgorithms(summaries: TrialSummary[]) {
         (total, row) => total + (row.completed_tasks ?? 0),
         0,
       );
+      const failed = rows.reduce(
+        (total, row) => total + (row.failed_tasks ?? 0),
+        0,
+      );
+      const timedOut = rows.reduce(
+        (total, row) => total + (row.timed_out_tasks ?? 0),
+        0,
+      );
       const elapsed = rows.reduce((total, row) => total + (row.elapsed_s ?? 0), 0);
       const latencies = rows.filter(
-        (row) => typeof row.average_latency_ms === "number",
+        (row) =>
+          typeof row.average_latency_ms === "number" &&
+          (row.completed_tasks ?? 0) > 0,
       );
       const averageLatency =
-        latencies.length > 0
+        completed > 0
           ? latencies.reduce(
-              (total, row) => total + (row.average_latency_ms ?? 0),
+              (total, row) =>
+                total +
+                (row.average_latency_ms ?? 0) * (row.completed_tasks ?? 0),
               0,
-            ) / latencies.length
+            ) / completed
           : undefined;
+      const weightedMetric = (
+        key:
+          | "average_cpu_utilization"
+          | "average_memory_utilization"
+          | "average_worker_utilization",
+      ) => {
+        const measured = rows.filter(
+          (row) =>
+            typeof row[key] === "number" &&
+            typeof row.elapsed_s === "number" &&
+            row.elapsed_s > 0,
+        );
+        const measuredElapsed = measured.reduce(
+          (total, row) => total + (row.elapsed_s ?? 0),
+          0,
+        );
+        return measuredElapsed > 0
+          ? measured.reduce(
+              (total, row) =>
+                total + (row[key] ?? 0) * (row.elapsed_s ?? 0),
+              0,
+            ) / measuredElapsed
+          : undefined;
+      };
       return {
         algorithm,
         trials: rows.length,
         completed,
+        failed,
+        timedOut,
         elapsed,
         averageLatency,
         throughput: elapsed > 0 ? completed / elapsed : undefined,
+        averageCpuUtilization: weightedMetric("average_cpu_utilization"),
+        averageMemoryUtilization: weightedMetric(
+          "average_memory_utilization",
+        ),
+        averageWorkerUtilization: weightedMetric(
+          "average_worker_utilization",
+        ),
       };
     })
     .filter((summary): summary is NonNullable<typeof summary> => summary !== null);
@@ -250,13 +439,17 @@ function App() {
     }
   }
 
-  async function exportCsv(kind: "tasks" | "summary") {
+  async function exportCsv(kind: "tasks" | "summary" | "diagnostics" | "dynamic") {
     if (!latestExperiment) return;
     setDownloadError("");
     const url =
       kind === "tasks"
         ? latestExperiment.result.task_csv_url
-        : latestExperiment.result.summary_csv_url;
+        : kind === "summary"
+          ? latestExperiment.result.summary_csv_url
+          : kind === "diagnostics"
+            ? latestExperiment.result.diagnostic_csv_url
+            : latestExperiment.result.dynamic_steps_csv_url;
     if (!url) {
       setDownloadError(
         "This backend response did not include a CSV download link.",
@@ -684,7 +877,7 @@ interface ExperimentPageProps {
   runError: string;
   latestExperiment: SavedExperiment | null;
   onClearResults: () => void;
-  onExport: (kind: "tasks" | "summary") => void;
+  onExport: (kind: "tasks" | "summary" | "diagnostics" | "dynamic") => void;
   downloadError: string;
 }
 
@@ -741,9 +934,7 @@ function ExperimentPage({
               </select>
               <ChevronDown size={16} aria-hidden="true" />
             </div>
-            <p className="field-hint">
-              Dynamic traffic varies task arrival delay across the run.
-            </p>
+            <p className="field-hint">{scenarioDescriptions[form.scenario]}</p>
 
             <label className="field-label" htmlFor="concurrency">
               Concurrency
@@ -822,6 +1013,95 @@ function ExperimentPage({
               <p className="field-hint" id="repetitions-hint">
                 Whole number from 1 to 20.
               </p>
+            )}
+
+            <label className="field-label" htmlFor="classical-rate-mode">
+              Classical rate selection
+            </label>
+            <div className="select-wrap">
+              <select
+                id="classical-rate-mode"
+                value={form.classical_rate_mode ?? "auto"}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  classical_rate_mode: event.target.value === "auto"
+                    ? undefined
+                    : event.target.value as ExperimentRequest["classical_rate_mode"],
+                }))}
+              >
+                <option value="auto">Automatic: cached measurement or paper preset</option>
+                <option value="paper_preset">Paper preset</option>
+                <option value="measured">Measured optimal rate</option>
+                <option value="manual">Manual rate</option>
+              </select>
+              <ChevronDown size={16} aria-hidden="true" />
+            </div>
+            {form.classical_rate_mode === "manual" && (
+              <div className="input-with-suffix">
+                <input
+                  aria-label="Manual classical token rate"
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  value={form.classical_rate ?? 150}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    classical_rate: Number(event.target.value),
+                  }))}
+                />
+                <span>tokens/s</span>
+              </div>
+            )}
+            <p className="field-hint">
+              Measured mode uses the cached result from the optimal-rate probe.
+            </p>
+
+            <label className="field-label" htmlFor="load-scope">Load measurement scope</label>
+            <div className="select-wrap">
+              <select
+                id="load-scope"
+                value={form.load_scope ?? "process"}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  load_scope: event.target.value as "process" | "host",
+                }))}
+              >
+                <option value="process">Benchmark process (paper prototype default)</option>
+                <option value="host">Whole host (diagnostic comparison)</option>
+              </select>
+              <ChevronDown size={16} aria-hidden="true" />
+            </div>
+
+            <label className="radio-card">
+              <input
+                type="checkbox"
+                checked={form.contention_model ?? true}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  contention_model: event.target.checked,
+                }))}
+              />
+              <span className="radio-indicator" />
+              <span className="radio-copy">
+                <strong>Simulated CPU contention</strong>
+                <small>{form.contention_model === false ? "Off · plain duration sleeps" : "On · processor-sharing simulation"}</small>
+              </span>
+            </label>
+            {form.scenario === "dynamic" && (
+              <label className="field-label" htmlFor="envelope-speedup">
+                Daily envelope speedup
+                <input
+                  id="envelope-speedup"
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  value={form.speedup ?? 1}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    speedup: Number(event.target.value),
+                  }))}
+                />
+              </label>
             )}
 
             <fieldset className="comparison-fieldset">
@@ -938,6 +1218,12 @@ function ExperimentPage({
           )}
         </div>
       </div>
+      <ConcurrencySweepPanel
+        scenario={form.scenario}
+        repetitions={form.repetitions}
+        comparison={form.comparison}
+        disabled={isRunning}
+      />
     </>
   );
 }
@@ -945,7 +1231,7 @@ function ExperimentPage({
 interface ExperimentResultsProps {
   experiment: SavedExperiment;
   onClear: () => void;
-  onExport: (kind: "tasks" | "summary") => void;
+  onExport: (kind: "tasks" | "summary" | "diagnostics" | "dynamic") => void;
   downloadError: string;
 }
 
@@ -999,6 +1285,18 @@ function ExperimentResults({
           >
             <Download size={15} /> Summary CSV
           </button>
+          <button
+            className="button button-secondary button-small"
+            onClick={() => onExport("diagnostics")}
+            disabled={!result.diagnostic_csv_url}
+          >
+            <Download size={15} /> Controller diagnostics
+          </button>
+          {result.dynamic_steps_csv_url && (
+            <button className="button button-secondary button-small" onClick={() => onExport("dynamic")}>
+              <Download size={15} /> Dynamic step CSV
+            </button>
+          )}
         </div>
       </div>
       {downloadError && (
@@ -1006,6 +1304,13 @@ function ExperimentResults({
           <AlertCircle size={16} /> <span>{downloadError}</span>
         </div>
       )}
+
+      <div className="summary-cards run-settings-cards" aria-label="Run settings">
+        <SummaryStat label="Classical token rate" value={`${formatNumber(result.classical_rate)} tokens/s`} note={result.classical_rate_mode ?? "automatic"} />
+        <SummaryStat label="Simulated CPU contention" value={result.contention_model ? "On" : "Off"} note={result.contention_model ? "4-core processor-sharing stand-in" : "Plain duration sleeps"} />
+        <SummaryStat label="Load scope" value={result.load_scope ?? "process"} note="CPU and memory signal used by the controller" />
+        <SummaryStat label="Idle service rate N" value={`${formatNumber(result.summaries[0]?.idle_service_rate_n)} tasks/s`} note="Measured calibration rate used by Eq. 6 and 11" />
+      </div>
 
       {algorithmSummaries.length > 0 && (
         <section className="summary-cards" aria-label="Measured algorithm summary">
@@ -1023,7 +1328,7 @@ function ExperimentResults({
                 <SummaryStat
                   label="Mean trial latency"
                   value={`${formatNumber(summary.averageLatency)} ms`}
-                  note="Mean of backend trial averages"
+                  note="Completion-weighted mean across trials"
                 />
                 <SummaryStat
                   label="Aggregate throughput"
@@ -1039,6 +1344,43 @@ function ExperimentResults({
                   label="Elapsed wall time"
                   value={`${formatNumber(summary.elapsed)} s`}
                   note="Sum of backend trial elapsed times"
+                />
+                <SummaryStat
+                  label="Failed tasks"
+                  value={summary.failed.toLocaleString()}
+                  note="Not included in completed-task throughput"
+                />
+                <SummaryStat
+                  label="Timed out tasks"
+                  value={summary.timedOut.toLocaleString()}
+                  note="Admission timeout; not included in throughput"
+                />
+                <SummaryStat
+                  label="Average CPU utilization"
+                  value={
+                    summary.averageCpuUtilization === undefined
+                      ? "Unavailable"
+                      : `${formatNumber(summary.averageCpuUtilization * 100)}%`
+                  }
+                  note="Sampled system CPU; not worker utilization"
+                />
+                <SummaryStat
+                  label="Average memory utilization"
+                  value={
+                    summary.averageMemoryUtilization === undefined
+                      ? "Unavailable"
+                      : `${formatNumber(summary.averageMemoryUtilization * 100)}%`
+                  }
+                  note="Sampled system memory"
+                />
+                <SummaryStat
+                  label="Average worker utilization"
+                  value={
+                    summary.averageWorkerUtilization === undefined
+                      ? "Unavailable"
+                      : `${formatNumber(summary.averageWorkerUtilization * 100)}%`
+                  }
+                  note="Active workers / configured workers"
                 />
               </div>
             </article>
@@ -1056,6 +1398,15 @@ function ExperimentResults({
         <>
           {twoAlgorithms && (
             <ComparisonCharts summaries={result.summaries} />
+          )}
+          {result.rate_diagnostics && result.rate_diagnostics.length > 0 && (
+            <RateTraceChart diagnostics={result.rate_diagnostics} />
+          )}
+          {result.dynamic_steps && result.dynamic_steps.length > 0 && (
+            <DynamicTrafficCharts
+              steps={result.dynamic_steps}
+              relative={result.dynamic_relative_differences ?? null}
+            />
           )}
           {!twoAlgorithms && (
             <div className="single-algorithm-note">
@@ -1081,6 +1432,113 @@ function ExperimentResults({
         />
       )}
     </section>
+  );
+}
+
+function RateTraceChart({
+  diagnostics,
+}: {
+  diagnostics: NonNullable<SavedExperiment["result"]["rate_diagnostics"]>;
+}) {
+  const adaptive = diagnostics.filter((row) => row.algorithm === "adaptive");
+  const trials = [...new Set(adaptive.map((row) => row.trial).filter((value): value is number => typeof value === "number"))];
+  const [trial, setTrial] = useState(trials[0] ?? 1);
+  const data = adaptive
+    .filter((row) => row.trial === trial)
+    .sort((a, b) => (a.elapsed_s ?? 0) - (b.elapsed_s ?? 0));
+  return (
+    <section className="charts-section">
+      <div className="section-heading">
+        <div><h3>Adaptive token-rate trace</h3><p>Rate updates with the active minimum and maximum bounds.</p></div>
+        {trials.length > 1 && (
+          <label>Trial <select value={trial} onChange={(event) => setTrial(Number(event.target.value))}>
+            {trials.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select></label>
+        )}
+      </div>
+      <ChartPanel title={`Rate trace · trial ${trial}`} subtitle="Tokens per second against elapsed trial time">
+        {data.length ? (
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+              <CartesianGrid stroke="#e5edf2" vertical={false} />
+              <XAxis dataKey="elapsed_s" tickFormatter={(value) => `${Number(value).toFixed(1)}s`} />
+              <YAxis width={48} />
+              <Tooltip formatter={(value) => [`${formatNumber(Number(value))} tokens/s`]} />
+              <Legend />
+              <Line type="stepAfter" dataKey="applied_rate" name="Applied rate" stroke={colors.adaptive} strokeWidth={2.5} dot={false} />
+              <Line type="stepAfter" dataKey="minimum_rate" name="Minimum rate" stroke="#bc6c55" strokeDasharray="5 4" dot={false} />
+              <Line type="stepAfter" dataKey="maximum_rate" name="Maximum rate" stroke="#789781" strokeDasharray="5 4" dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : <ChartEmpty />}
+      </ChartPanel>
+    </section>
+  );
+}
+
+function DynamicTrafficCharts({
+  steps,
+  relative,
+}: {
+  steps: NonNullable<SavedExperiment["result"]["dynamic_steps"]>;
+  relative: SavedExperiment["result"]["dynamic_relative_differences"];
+}) {
+  const rows = useMemo(() => {
+    const byStep = new Map<number, Record<string, number>>();
+    for (const row of steps) {
+      const point = byStep.get(row.step) ?? { step: row.step, concurrency: row.concurrency };
+      if (row.mean_latency_ms !== undefined) point[`${row.algorithm}_latency`] = row.mean_latency_ms;
+      if (row.p90_latency_ms !== undefined) point[`${row.algorithm}_p90`] = row.p90_latency_ms;
+      if (row.throughput_tasks_per_s !== undefined) point[`${row.algorithm}_throughput`] = row.throughput_tasks_per_s;
+      byStep.set(row.step, point);
+    }
+    return [...byStep.values()].sort((a, b) => a.step - b.step);
+  }, [steps]);
+  return (
+    <section className="charts-section">
+      <div className="section-heading"><div><h3>Dynamic traffic · 70 steps</h3><p>Periodic mixed-workload bursts with a sinusoidal concurrency stand-in.</p></div></div>
+      {relative && (
+        <div className="summary-cards">
+          <SummaryStat label="Latency relative difference" value={`${formatNumber((relative.mean_latency_relative_difference ?? 0) * 100)}%`} note="(classical − adaptive) / classical; positive favors adaptive" />
+          <SummaryStat label="P90 relative difference" value={`${formatNumber((relative.mean_p90_relative_difference ?? 0) * 100)}%`} note="Mean of paired step differences" />
+          <SummaryStat label="Throughput relative difference" value={`${formatNumber((relative.mean_throughput_relative_difference ?? 0) * 100)}%`} note="(adaptive − classical) / classical; positive favors adaptive" />
+        </div>
+      )}
+      <div className="chart-grid">
+        <DynamicMetricChart title="Mean latency" data={rows} suffix="latency" unit="ms" />
+        <DynamicMetricChart title="P90 latency" data={rows} suffix="p90" unit="ms" />
+        <DynamicMetricChart title="Throughput" data={rows} suffix="throughput" unit="tasks/s" />
+      </div>
+    </section>
+  );
+}
+
+function DynamicMetricChart({
+  title,
+  data,
+  suffix,
+  unit,
+}: {
+  title: string;
+  data: Record<string, number>[];
+  suffix: string;
+  unit: string;
+}) {
+  return (
+    <ChartPanel title={title} subtitle={`Per-step measurements · ${unit}`}>
+      <ResponsiveContainer width="100%" height={240}>
+        <LineChart data={data} margin={{ top: 8, right: 10, left: 0, bottom: 4 }}>
+          <CartesianGrid stroke="#e5edf2" vertical={false} />
+          <XAxis dataKey="step" />
+          <YAxis width={48} />
+          <Tooltip formatter={(value) => [`${formatNumber(Number(value))} ${unit}`]} />
+          <Legend />
+          {(["classical", "adaptive"] as const).map((algorithm) => (
+            <Line key={algorithm} type="monotone" dataKey={`${algorithm}_${suffix}`} name={algorithmLabels[algorithm]} stroke={colors[algorithm]} strokeWidth={2} dot={false} connectNulls />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartPanel>
   );
 }
 
@@ -1331,7 +1789,7 @@ function TrialTable({ summaries }: { summaries: TrialSummary[] }) {
       <div className="section-heading">
         <div>
           <h3>Trial summaries</h3>
-          <p>One row per completed algorithm trial, as reported by the backend.</p>
+          <p>One row per algorithm trial; failed tasks are reported separately.</p>
         </div>
       </div>
       <div className="table-shell">
@@ -1343,9 +1801,27 @@ function TrialTable({ summaries }: { summaries: TrialSummary[] }) {
               <th>Scenario</th>
               <th>Concurrency</th>
               <th>Completed tasks</th>
+              <th>Failed tasks</th>
+              <th>Timed out tasks</th>
               <th>Elapsed (s)</th>
               <th>Avg latency (ms)</th>
+              <th>p95 latency (ms)</th>
+              <th>p90 latency (ms)</th>
+              <th>Classical rate</th>
+              <th>Rate mode</th>
+              <th>Idle rate N</th>
               <th>Throughput (tasks/s)</th>
+              <th>Controller update (ms)</th>
+              <th>Token wait (ms)</th>
+              <th>Executor wait (ms)</th>
+              <th>Processing (ms)</th>
+              <th>Observed rate range</th>
+              <th>Min/max clamps</th>
+              <th>CPU utilization</th>
+              <th>Memory utilization</th>
+              <th>Worker utilization</th>
+              <th>Rate updates</th>
+              <th>Final token rate</th>
             </tr>
           </thead>
           <tbody>
@@ -1356,9 +1832,47 @@ function TrialTable({ summaries }: { summaries: TrialSummary[] }) {
                 <td>{summary.scenario ?? "—"}</td>
                 <td>{summary.concurrency ?? "—"}</td>
                 <td>{summary.completed_tasks ?? "—"}</td>
+                <td>{summary.failed_tasks ?? "—"}</td>
+                <td>{summary.timed_out_tasks ?? "—"}</td>
                 <td>{formatNumber(summary.elapsed_s, 3)}</td>
                 <td>{formatNumber(summary.average_latency_ms)}</td>
+                <td>{formatNumber(summary.p95_latency_ms)}</td>
+                <td>{formatNumber(summary.p90_latency_ms)}</td>
+                <td>{formatNumber(summary.classical_token_rate)}</td>
+                <td>{summary.rate_mode ?? "—"}</td>
+                <td>{formatNumber(summary.idle_service_rate_n)}</td>
                 <td>{formatNumber(summary.throughput_tasks_per_s)}</td>
+                <td>{formatNumber(summary.average_controller_update_ms)}</td>
+                <td>{formatNumber(summary.average_token_admission_wait_ms)}</td>
+                <td>{formatNumber(summary.average_executor_queue_wait_ms)}</td>
+                <td>{formatNumber(summary.average_processing_ms)}</td>
+                <td>
+                  {summary.minimum_observed_rate === undefined ||
+                  summary.maximum_observed_rate === undefined
+                    ? "—"
+                    : `${formatNumber(summary.minimum_observed_rate)}–${formatNumber(summary.maximum_observed_rate)}`}
+                </td>
+                <td>
+                  {summary.minimum_rate_clamps ?? "—"}/
+                  {summary.maximum_rate_clamps ?? "—"}
+                </td>
+                <td>
+                  {typeof summary.average_cpu_utilization === "number"
+                    ? `${formatNumber(summary.average_cpu_utilization * 100)}%`
+                    : "Unavailable"}
+                </td>
+                <td>
+                  {typeof summary.average_memory_utilization === "number"
+                    ? `${formatNumber(summary.average_memory_utilization * 100)}%`
+                    : "Unavailable"}
+                </td>
+                <td>
+                  {typeof summary.average_worker_utilization === "number"
+                    ? `${formatNumber(summary.average_worker_utilization * 100)}%`
+                    : "Unavailable"}
+                </td>
+                <td>{summary.rate_updates ?? "—"}</td>
+                <td>{formatNumber(summary.final_token_rate)}</td>
               </tr>
             ))}
           </tbody>
@@ -1397,6 +1911,7 @@ type SortKey =
   | "task_id"
   | "task_type"
   | "duration_ms"
+  | "admission_delay_ms"
   | "queue_wait_ms"
   | "latency_ms"
   | "processing_ms";
@@ -1547,13 +2062,21 @@ function TaskResultsTable({
                   <SortableHeader label="Task ID" sortKey="task_id" active={sortKey} direction={sortDirection} onSort={sortBy} />
                   <SortableHeader label="Type" sortKey="task_type" active={sortKey} direction={sortDirection} onSort={sortBy} />
                   <SortableHeader label="Duration (ms)" sortKey="duration_ms" active={sortKey} direction={sortDirection} onSort={sortBy} />
+                  <th>Scheduled*</th>
+                  <th>Released*</th>
                   <th>Submitted*</th>
+                  <th>Token requested*</th>
                   <th>Admitted*</th>
                   <th>Started*</th>
                   <th>Completed*</th>
+                  <SortableHeader label="Admission delay (ms)" sortKey="admission_delay_ms" active={sortKey} direction={sortDirection} onSort={sortBy} />
+                  <th>Arrival to submit (ms)</th>
+                  <th>Controller (ms)</th>
+                  <th>Token wait (ms)</th>
                   <SortableHeader label="Queue wait (ms)" sortKey="queue_wait_ms" active={sortKey} direction={sortDirection} onSort={sortBy} />
                   <SortableHeader label="Latency (ms)" sortKey="latency_ms" active={sortKey} direction={sortDirection} onSort={sortBy} />
                   <SortableHeader label="Processing (ms)" sortKey="processing_ms" active={sortKey} direction={sortDirection} onSort={sortBy} />
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -1564,13 +2087,21 @@ function TaskResultsTable({
                     <td>{task.task_id ?? "—"}</td>
                     <td>{task.task_type ?? "—"}</td>
                     <td>{formatNumber(task.duration_ms, 1)}</td>
+                    <td>{relativeTime(task.scheduled_arrival_s)}</td>
+                    <td>{relativeTime(task.actual_arrival_s)}</td>
                     <td>{relativeTime(task.submitted_s)}</td>
+                    <td>{relativeTime(task.token_requested_s)}</td>
                     <td>{relativeTime(task.admitted_s)}</td>
                     <td>{relativeTime(task.started_s)}</td>
                     <td>{relativeTime(task.completed_s)}</td>
+                    <td>{formatNumber(task.admission_delay_ms, 2)}</td>
+                    <td>{formatNumber(task.external_arrival_to_submission_ms, 2)}</td>
+                    <td>{formatNumber(task.controller_update_ms, 2)}</td>
+                    <td>{formatNumber(task.token_admission_wait_ms, 2)}</td>
                     <td>{formatNumber(task.queue_wait_ms, 2)}</td>
                     <td>{formatNumber(task.latency_ms, 2)}</td>
                     <td>{formatNumber(task.processing_ms, 2)}</td>
+                    <td title={task.error}>{task.status ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

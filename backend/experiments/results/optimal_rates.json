@@ -1,0 +1,243 @@
+{
+  "simple": {
+    "scenario": "simple",
+    "rate": 125.0,
+    "candidate_rates": [
+      50,
+      75,
+      100,
+      125,
+      150,
+      200
+    ],
+    "concurrency_levels": [
+      50,
+      150
+    ],
+    "repetitions": 5,
+    "sweep": [
+      {
+        "rate": 50.0,
+        "mean_latency_ms": 910.3592156011146,
+        "std_latency_ms": 522.6054470953069,
+        "mean_throughput_tasks_per_s": 54.13169397505196
+      },
+      {
+        "rate": 75.0,
+        "mean_latency_ms": 630.8200302667683,
+        "std_latency_ms": 349.27080450702954,
+        "mean_throughput_tasks_per_s": 79.48317953916273
+      },
+      {
+        "rate": 100.0,
+        "mean_latency_ms": 521.8711374668637,
+        "std_latency_ms": 262.23416450457376,
+        "mean_throughput_tasks_per_s": 99.05166129971983
+      },
+      {
+        "rate": 125.0,
+        "mean_latency_ms": 518.4047533333845,
+        "std_latency_ms": 257.90439647192676,
+        "mean_throughput_tasks_per_s": 99.81955835657652
+      },
+      {
+        "rate": 150.0,
+        "mean_latency_ms": 518.7075257997107,
+        "std_latency_ms": 261.30048778812767,
+        "mean_throughput_tasks_per_s": 99.62961257169525
+      },
+      {
+        "rate": 200.0,
+        "mean_latency_ms": 520.802870066138,
+        "std_latency_ms": 260.61493451070186,
+        "mean_throughput_tasks_per_s": 99.35317200868786
+      }
+    ]
+  },
+  "general": {
+    "scenario": "general",
+    "rate": 50.0,
+    "candidate_rates": [
+      50,
+      100,
+      200,
+      300,
+      400,
+      500
+    ],
+    "concurrency_levels": [
+      50,
+      150
+    ],
+    "repetitions": 5,
+    "sweep": [
+      {
+        "rate": 50.0,
+        "mean_latency_ms": 2106.450886065024,
+        "std_latency_ms": 1034.6956685707887,
+        "mean_throughput_tasks_per_s": 24.969057096821228
+      },
+      {
+        "rate": 100.0,
+        "mean_latency_ms": 2109.4088707999326,
+        "std_latency_ms": 1034.0239658120497,
+        "mean_throughput_tasks_per_s": 24.959457125323937
+      },
+      {
+        "rate": 200.0,
+        "mean_latency_ms": 2111.2029494662224,
+        "std_latency_ms": 1041.5076152687152,
+        "mean_throughput_tasks_per_s": 24.95892806223621
+      },
+      {
+        "rate": 300.0,
+        "mean_latency_ms": 2114.1237466662037,
+        "std_latency_ms": 1041.245168727331,
+        "mean_throughput_tasks_per_s": 24.913578545373856
+      },
+      {
+        "rate": 400.0,
+        "mean_latency_ms": 2112.7206981997783,
+        "std_latency_ms": 1039.4619279914725,
+        "mean_throughput_tasks_per_s": 24.881343666519868
+      },
+      {
+        "rate": 500.0,
+        "mean_latency_ms": 2109.561834467497,
+        "std_latency_ms": 1035.6084578689802,
+        "mean_throughput_tasks_per_s": 24.941684791056332
+      }
+    ]
+  },
+  "mixed": {
+    "scenario": "mixed",
+    "rate": 150.0,
+    "candidate_rates": [
+      50,
+      75,
+      100,
+      125,
+      150,
+      200,
+      300,
+      400,
+      500
+    ],
+    "concurrency_levels": [
+      50,
+      150
+    ],
+    "repetitions": 1,
+    "sweep": [
+      {
+        "rate": 50.0,
+        "mean_latency_ms": 3552.9411939973943,
+        "std_latency_ms": 2607.369929205625,
+        "mean_throughput_tasks_per_s": 14.899970031110996
+      },
+      {
+        "rate": 75.0,
+        "mean_latency_ms": 3580.838528001526,
+        "std_latency_ms": 2622.9401320253833,
+        "mean_throughput_tasks_per_s": 14.796020064920034
+      },
+      {
+        "rate": 100.0,
+        "mean_latency_ms": 3572.4290686680856,
+        "std_latency_ms": 2613.486163384484,
+        "mean_throughput_tasks_per_s": 14.845695069053178
+      },
+      {
+        "rate": 125.0,
+        "mean_latency_ms": 3551.4608586684335,
+        "std_latency_ms": 2592.30559716967,
+        "mean_throughput_tasks_per_s": 14.882320137885667
+      },
+      {
+        "rate": 150.0,
+        "mean_latency_ms": 3546.679684999011,
+        "std_latency_ms": 2596.0535633943787,
+        "mean_throughput_tasks_per_s": 14.908272275379717
+      },
+      {
+        "rate": 200.0,
+        "mean_latency_ms": 3557.3487890009224,
+        "std_latency_ms": 2594.1944948136484,
+        "mean_throughput_tasks_per_s": 14.82819785087036
+      },
+      {
+        "rate": 300.0,
+        "mean_latency_ms": 3628.2371426653117,
+        "std_latency_ms": 2711.9250100403183,
+        "mean_throughput_tasks_per_s": 14.768519043253377
+      },
+      {
+        "rate": 400.0,
+        "mean_latency_ms": 3691.712578999965,
+        "std_latency_ms": 2759.9190036411806,
+        "mean_throughput_tasks_per_s": 14.426135798891512
+      },
+      {
+        "rate": 500.0,
+        "mean_latency_ms": 3609.2773136686687,
+        "std_latency_ms": 2620.6492724546574,
+        "mean_throughput_tasks_per_s": 14.638380036818525
+      }
+    ]
+  },
+  "complex": {
+    "scenario": "complex",
+    "rate": 400.0,
+    "candidate_rates": [
+      25,
+      50,
+      100,
+      200,
+      300,
+      400
+    ],
+    "concurrency_levels": [
+      50,
+      150
+    ],
+    "repetitions": 1,
+    "sweep": [
+      {
+        "rate": 25.0,
+        "mean_latency_ms": 8828.675275666366,
+        "std_latency_ms": 6063.615009423297,
+        "mean_throughput_tasks_per_s": 6.0832779574655484
+      },
+      {
+        "rate": 50.0,
+        "mean_latency_ms": 8575.481041667128,
+        "std_latency_ms": 5577.128796653773,
+        "mean_throughput_tasks_per_s": 6.121741478669149
+      },
+      {
+        "rate": 100.0,
+        "mean_latency_ms": 8523.405746999586,
+        "std_latency_ms": 5502.998240905284,
+        "mean_throughput_tasks_per_s": 6.165708838965411
+      },
+      {
+        "rate": 200.0,
+        "mean_latency_ms": 8473.993738668894,
+        "std_latency_ms": 5560.886459141134,
+        "mean_throughput_tasks_per_s": 6.2430738628366065
+      },
+      {
+        "rate": 300.0,
+        "mean_latency_ms": 8562.034759333863,
+        "std_latency_ms": 5562.0522048094435,
+        "mean_throughput_tasks_per_s": 6.124089383177962
+      },
+      {
+        "rate": 400.0,
+        "mean_latency_ms": 8435.800514664734,
+        "std_latency_ms": 5542.392576256652,
+        "mean_throughput_tasks_per_s": 6.262690078140242
+      }
+    ]
+  }
+}
